@@ -3,6 +3,22 @@ from datetime import date, datetime, timedelta
 import pandas as pd
 import streamlit as st
 
+SENHA = "treino123"
+
+if "auth" not in st.session_state:
+    st.session_state.auth = False
+
+if not st.session_state.auth:
+    st.title("Acesso restrito")
+    senha = st.text_input("Senha", type="password")
+    if st.button("Entrar"):
+        if senha == SENHA:
+            st.session_state.auth = True
+            st.experimental_rerun()
+        else:
+            st.error("Senha incorreta")
+    st.stop()
+
 ARQ = "dados_treino.xlsx"
 
 # -----------------------------
@@ -286,3 +302,4 @@ with tabs[4]:
     st.dataframe(df_hiit.tail(20), use_container_width=True)
 
 st.caption(f"Arquivo de dados: {ARQ}")
+
