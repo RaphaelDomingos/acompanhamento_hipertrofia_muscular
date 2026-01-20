@@ -243,31 +243,37 @@ with tabs[1]:
     st.divider()
     st.caption("Últimos exercícios registrados (já salvos no arquivo)")
 
-    # Mostrar últimos registros COM índice real
-    ultimos = df_treino.tail(25).copy()
-    ultimos = ultimos.reset_index()  # mantém índice original
+ultimos = df_treino.tail(25).copy()
+
+if ultimos.empty:
+    st.info("Não há exercícios salvos para exibir/excluir.")
+else:
+    ultimos = ultimos.reset_index()  # mantém índice original na coluna 'index'
     st.dataframe(ultimos, use_container_width=True)
-    
+
     st.markdown("### 🗑️ Excluir exercício salvo")
-    
+
+    min_idx = int(ultimos["index"].min())
+    max_idx = int(ultimos["index"].max())
+
     col_del1, col_del2 = st.columns(2)
     with col_del1:
         idx_del = st.number_input(
             "Índice do exercício a excluir",
-            min_value=int(ultimos["index"].min()),
-            max_value=int(ultimos["index"].max()),
+            min_value=min_idx,
+            max_value=max_idx,
+            value=min_idx,
             step=1
         )
-    
     with col_del2:
         confirmar = st.checkbox("Confirmar exclusão")
-    
+
     if st.button("❌ Excluir exercício"):
         if not confirmar:
             st.warning("Marque a confirmação para excluir.")
         else:
             try:
-                df_treino = df_treino.drop(index=idx_del).reset_index(drop=True)
+                df_treino = df_treino.drop(index=int(idx_del)).reset_index(drop=True)
                 save_sheets({"Checkin": df_checkin, "Treino": df_treino, "HIIT": df_hiit})
                 st.success("Exercício excluído com sucesso ✅")
                 st.rerun()
@@ -517,6 +523,7 @@ with tabs[4]:
     st.dataframe(df_hiit.tail(20), use_container_width=True)
 
 st.caption(f"Arquivo de dados: {ARQ}")
+
 
 
 
