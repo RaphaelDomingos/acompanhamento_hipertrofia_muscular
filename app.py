@@ -3,7 +3,7 @@ from datetime import date, datetime, timedelta
 import pandas as pd
 import streamlit as st
 
-SENHA = "treino123"
+SENHA = "treino0714"
 
 if "auth" not in st.session_state:
     st.session_state.auth = False
@@ -302,4 +302,5 @@ with tabs[4]:
     st.dataframe(df_hiit.tail(20), use_container_width=True)
 
 st.caption(f"Arquivo de dados: {ARQ}")
+
 
