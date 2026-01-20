@@ -3,8 +3,6 @@ from datetime import date, datetime, timedelta
 import pandas as pd
 import streamlit as st
 
-import streamlit as st
-
 SENHA = "treino0714"  # troque aqui
 
 if "auth" not in st.session_state:
@@ -57,7 +55,7 @@ def save_sheets(dfs: dict):
 st.set_page_config(page_title="Acompanhamento Treino", layout="wide")
 st.title("Acompanhamento Inteligente – MJ & Raphael")
 
-tabs = st.tabs(["✅ Check-in", "🏋️ Treino", "📈 Resumo Semanal", "💪 Controle por Músculo", "🔥 HIIT (Raphael)"])
+tabs = st.tabs(["✅ Check-in", "🏋️ Treino", "📈 Resumo Semanal", "🧾 Relatório Semanal", "💪 Controle por Músculo", "🔥 HIIT (Raphael)"])
 
 # -----------------------------
 # DataFrames base
@@ -127,65 +125,123 @@ with tabs[0]:
     st.dataframe(df_checkin.tail(20), use_container_width=True)
 
 # -----------------------------
-# TAB 2: TREINO
+# TAB 2: TREINO (Lote)
 # -----------------------------
 with tabs[1]:
-    st.subheader("Registro de treino (2–3 minutos)")
+    st.subheader("Registro de treino (em lote)")
 
-    colA, colB, colC = st.columns(3)
+    # Buffer para armazenar exercícios antes de salvar
+    if "workout_buffer" not in st.session_state:
+        st.session_state.workout_buffer = []
+
+    # Cabeçalho do treino do dia
+    colA, colB, colC, colD = st.columns(4)
     with colA:
         aluno_t = st.selectbox("Aluno", ["MJ", "Raphael"], key="tr_aluno")
-        data_t = st.date_input("Data do treino", value=date.today(), key="tr_data")
     with colB:
-        sessao = st.selectbox("Sessão", ["D1", "D2", "D3", "D4"], key="tr_sessao")
-        tecnica = st.selectbox("Técnica (opcional)", ["N/A","Drop set","Rest-pause","Bi-set","Pré-exaustão"], key="tr_tecnica")
+        data_t = st.date_input("Data do treino", value=date.today(), key="tr_data")
     with colC:
+        sessao = st.selectbox("Sessão", ["D1", "D2", "D3", "D4"], key="tr_sessao")
+    with colD:
+        tecnica_padrao = st.selectbox(
+            "Técnica padrão (opcional)",
+            ["N/A","Drop set","Rest-pause","Bi-set","Pré-exaustão"],
+            key="tr_tecnica_padrao"
+        )
+
+    st.markdown("### Adicionar exercício ao treino do dia")
+
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        exercicio = st.text_input("Exercício (ex.: Puxada alta Hammer)", key="tr_exercicio")
+    with col2:
         grupo = st.selectbox(
             "Grupo muscular (principal)",
             ["Peito","Costas","Ombros","Bíceps","Tríceps","Quadríceps","Posterior","Glúteos","Panturrilha","Core","Cardio"],
             key="tr_grupo"
         )
-        rpe_ex = st.slider("RPE do exercício (1–10)", 1, 10, 8, key="tr_rpe_ex")
-
-    exercicio = st.text_input("Exercício (ex.: Puxada alta Hammer)", key="tr_exercicio")
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        carga = st.number_input("Carga (kg)", min_value=0.0, max_value=500.0, value=20.0, step=1.0, key="tr_carga")
-    with col2:
-        reps = st.number_input("Reps", min_value=1, max_value=50, value=10, step=1, key="tr_reps")
     with col3:
-        sets = st.number_input("Sets", min_value=1, max_value=20, value=3, step=1, key="tr_sets")
+        carga = st.number_input("Carga (kg)", min_value=0.0, max_value=500.0, value=20.0, step=1.0, key="tr_carga")
+        reps = st.number_input("Reps", min_value=1, max_value=50, value=10, step=1, key="tr_reps")
     with col4:
-        obs_t = st.text_input("Observação (opcional)", key="tr_obs")
+        sets = st.number_input("Sets", min_value=1, max_value=20, value=3, step=1, key="tr_sets")
+        rpe_ex = st.slider("RPE (1–10)", 1, 10, 8, key="tr_rpe_ex")
 
+    tecnica = st.selectbox(
+        "Técnica (opcional) para este exercício",
+        ["(usar padrão)","N/A","Drop set","Rest-pause","Bi-set","Pré-exaustão"],
+        key="tr_tecnica_ex"
+    )
+    obs_t = st.text_input("Observação (opcional)", key="tr_obs")
+
+    # Calcula volume
     volume = float(carga) * int(reps) * int(sets)
     st.metric("Volume (kg)", int(volume))
 
-    if st.button("Adicionar exercício", key="tr_add"):
-        if not exercicio.strip():
-            st.error("Digite o nome do exercício.")
-        else:
-            linha = {
-                "Data": pd.to_datetime(data_t),
-                "Semana": week_key(data_t),
-                "Aluno": aluno_t,
-                "Sessao": sessao,
-                "Exercicio": exercicio.strip(),
-                "Grupo_muscular": grupo,
-                "Carga_kg": float(carga),
-                "Reps": int(reps),
-                "Sets": int(sets),
-                "RPE_exercicio": int(rpe_ex),
-                "Tecnica": tecnica,
-                "Observacao": obs_t,
-                "Volume_kg": float(volume),
-            }
-            df_treino = pd.concat([df_treino, pd.DataFrame([linha])], ignore_index=True)
-            save_sheets({"Checkin": df_checkin, "Treino": df_treino, "HIIT": df_hiit})
-            st.success("Exercício adicionado ✅")
+    # Botões: adicionar ao buffer / limpar buffer
+    col_btn1, col_btn2, col_btn3 = st.columns([1,1,2])
+    with col_btn1:
+        if st.button("➕ Adicionar à lista", key="tr_add_buffer"):
+            if not exercicio.strip():
+                st.error("Digite o nome do exercício.")
+            else:
+                tecnica_final = tecnica_padrao if tecnica == "(usar padrão)" else tecnica
+                st.session_state.workout_buffer.append({
+                    "Data": pd.to_datetime(data_t),
+                    "Semana": week_key(data_t),
+                    "Aluno": aluno_t,
+                    "Sessao": sessao,
+                    "Exercicio": exercicio.strip(),
+                    "Grupo_muscular": grupo,
+                    "Carga_kg": float(carga),
+                    "Reps": int(reps),
+                    "Sets": int(sets),
+                    "RPE_exercicio": int(rpe_ex),
+                    "Tecnica": tecnica_final,
+                    "Observacao": obs_t,
+                    "Volume_kg": float(volume),
+                })
+                st.success("Adicionado à lista do treino ✅")
+
+    with col_btn2:
+        if st.button("🧹 Limpar lista", key="tr_clear_buffer"):
+            st.session_state.workout_buffer = []
+            st.info("Lista do treino limpa.")
 
     st.divider()
-    st.caption("Últimos exercícios registrados")
+    st.markdown("### Exercícios do treino do dia (prévia)")
+
+    if len(st.session_state.workout_buffer) == 0:
+        st.warning("Nenhum exercício na lista ainda. Adicione acima.")
+    else:
+        df_buffer = pd.DataFrame(st.session_state.workout_buffer)
+        st.dataframe(df_buffer, use_container_width=True)
+
+        # Remover item específico
+        idx = st.number_input(
+            "Remover exercício pelo índice (0, 1, 2...)", min_value=0,
+            max_value=max(0, len(st.session_state.workout_buffer)-1),
+            value=0, step=1, key="tr_remove_idx"
+        )
+        if st.button("🗑️ Remover índice", key="tr_remove_btn"):
+            try:
+                st.session_state.workout_buffer.pop(int(idx))
+                st.success("Removido ✅")
+            except Exception:
+                st.error("Não consegui remover. Verifique o índice.")
+
+        st.divider()
+
+        # Salvar o treino do dia (lote)
+        if st.button("💾 Salvar treino do dia (tudo)", key="tr_save_all"):
+            df_new = pd.DataFrame(st.session_state.workout_buffer)
+            df_treino = pd.concat([df_treino, df_new], ignore_index=True)
+            save_sheets({"Checkin": df_checkin, "Treino": df_treino, "HIIT": df_hiit})
+            st.session_state.workout_buffer = []
+            st.success(f"Treino salvo em {ARQ} ✅")
+
+    st.divider()
+    st.caption("Últimos exercícios registrados (já salvos no arquivo)")
     st.dataframe(df_treino.tail(25), use_container_width=True)
 
 # -----------------------------
@@ -234,7 +290,136 @@ with tabs[2]:
         st.caption("Dica: decisão é baseada principalmente no Readiness médio (recuperação).")
 
 # -----------------------------
-# TAB 4: CONTROLE POR MÚSCULO
+# TAB 4: RELATÓRIO SEMANAL (Markdown Prompt)
+# -----------------------------
+with tabs[3]:
+    st.subheader("Relatório Semanal (copiar/colar para o Mestre GPT)")
+
+    semanas = sorted(set(list(df_checkin["Semana"].dropna()) + list(df_treino["Semana"].dropna()) + list(df_hiit["Semana"].dropna())))
+    if not semanas:
+        st.info("Ainda não há dados suficientes.")
+    else:
+        semana_sel = st.selectbox("Selecione a semana", semanas[::-1], key="rel_semana")
+
+        def build_student_report(nome):
+            ci = df_checkin[(df_checkin["Aluno"] == nome) & (df_checkin["Semana"] == semana_sel)].copy()
+            tr = df_treino[(df_treino["Aluno"] == nome) & (df_treino["Semana"] == semana_sel)].copy()
+            hi = df_hiit[(df_hiit["Aluno"] == nome) & (df_hiit["Semana"] == semana_sel)].copy()
+
+            readiness_med = ci["Readiness"].mean() if len(ci) else None
+            rpe_med = ci["RPE_sessao"].mean() if len(ci) else None
+            sono_med = ci["Sono_h"].mean() if len(ci) else None
+            estresse_med = ci["Estresse"].mean() if len(ci) else None
+            dor_med = ci["Dor_articular"].mean() if len(ci) else None
+
+            volume_total = tr["Volume_kg"].sum() if len(tr) else 0
+            sets_total = tr["Sets"].sum() if len(tr) else 0
+
+            # Top músculos por sets
+            if len(tr):
+                by_m = tr.groupby("Grupo_muscular").agg(
+                    sets=("Sets","sum"),
+                    volume=("Volume_kg","sum")
+                ).reset_index().sort_values("sets", ascending=False)
+                top_m = by_m.head(6)
+            else:
+                top_m = pd.DataFrame(columns=["Grupo_muscular","sets","volume"])
+
+            # HIIT
+            hiit_count = len(hi)
+            hiit_minutes = hi["Minutos"].sum() if len(hi) else 0
+
+            # Alertas simples
+            alerts = []
+            if readiness_med is not None and readiness_med < 60:
+                alerts.append("Readiness médio < 60 (recuperação baixa).")
+            if dor_med is not None and dor_med >= 4:
+                alerts.append("Dor articular média elevada (>=4).")
+            if nome.lower().startswith("raphael") or nome == "Raphael":
+                if hiit_count < 2:
+                    alerts.append("HIIT < 2x na semana (metabólico pendente).")
+
+            return {
+                "nome": nome,
+                "readiness_med": None if readiness_med is None else round(float(readiness_med), 1),
+                "rpe_med": None if rpe_med is None else round(float(rpe_med), 1),
+                "sono_med": None if sono_med is None else round(float(sono_med), 1),
+                "estresse_med": None if estresse_med is None else round(float(estresse_med), 1),
+                "dor_med": None if dor_med is None else round(float(dor_med), 1),
+                "volume_total": int(round(float(volume_total), 0)),
+                "sets_total": int(sets_total),
+                "top_m": top_m,
+                "hiit_count": int(hiit_count),
+                "hiit_minutes": int(hiit_minutes),
+                "alerts": alerts
+            }
+
+        # Nomes conforme seu app
+        rep_mj = build_student_report("MJ")
+        rep_rap = build_student_report("Raphael")
+
+        def fmt_top_m(df):
+            if df is None or df.empty:
+                return "- (sem dados de treino registrados na semana)\n"
+            lines = []
+            for _, r in df.iterrows():
+                lines.append(f"- {r['Grupo_muscular']}: **{int(r['sets'])} sets**, volume **{int(r['volume'])} kg**")
+            return "\n".join(lines) + "\n"
+
+        prompt_md = f"""# Relatório Semanal – Semana {semana_sel}
+
+Você é meu consultor de treino (hipertrofia + performance + recuperação). Com base nos dados abaixo, gere:
+1) Diagnóstico da semana (MJ e Raphael)
+2) Ajustes no próximo microciclo (volume por músculo, progressão, técnicas)
+3) Alertas e ações preventivas (dor, fadiga, sono, HIIT)
+4) Objetivos práticos para a semana seguinte (3 bullets por aluno)
+
+---
+
+## MJ
+- Readiness médio: **{rep_mj['readiness_med']}**
+- RPE médio (sessão): **{rep_mj['rpe_med']}**
+- Sono médio (h): **{rep_mj['sono_med']}**
+- Estresse médio: **{rep_mj['estresse_med']}**
+- Dor articular média: **{rep_mj['dor_med']}**
+- Sets totais: **{rep_mj['sets_total']}**
+- Volume total: **{rep_mj['volume_total']} kg**
+
+**Top músculos (sets/volume):**
+{fmt_top_m(rep_mj['top_m'])}
+**Alertas:**
+- {("Nenhum." if len(rep_mj['alerts'])==0 else " | ".join(rep_mj['alerts']))}
+
+---
+
+## Raphael
+- Readiness médio: **{rep_rap['readiness_med']}**
+- RPE médio (sessão): **{rep_rap['rpe_med']}**
+- Sono médio (h): **{rep_rap['sono_med']}**
+- Estresse médio: **{rep_rap['estresse_med']}**
+- Dor articular média: **{rep_rap['dor_med']}**
+- Sets totais: **{rep_rap['sets_total']}**
+- Volume total: **{rep_rap['volume_total']} kg**
+- HIIT na semana: **{rep_rap['hiit_count']}x** | **{rep_rap['hiit_minutes']} min**
+
+**Top músculos (sets/volume):**
+{fmt_top_m(rep_rap['top_m'])}
+**Alertas:**
+- {("Nenhum." if len(rep_rap['alerts'])==0 else " | ".join(rep_rap['alerts']))}
+"""
+
+        st.markdown("### Prompt (Markdown) pronto para copiar")
+        st.code(prompt_md, language="markdown")
+
+        st.download_button(
+            "⬇️ Baixar relatório (.md)",
+            data=prompt_md.encode("utf-8"),
+            file_name=f"relatorio_{semana_sel}.md",
+            mime="text/markdown"
+        )
+
+# -----------------------------
+# TAB 5: CONTROLE POR MÚSCULO
 # -----------------------------
 with tabs[3]:
     st.subheader("Controle por músculo (sets e volume)")
@@ -267,7 +452,7 @@ with tabs[3]:
             st.dataframe(agg.sort_values("Sets_totais", ascending=False), use_container_width=True)
 
 # -----------------------------
-# TAB 5: HIIT (Raphael)
+# TAB 6: HIIT (Raphael)
 # -----------------------------
 with tabs[4]:
     st.subheader("HIIT / Cardio – foco Raphael")
@@ -302,6 +487,7 @@ with tabs[4]:
     st.dataframe(df_hiit.tail(20), use_container_width=True)
 
 st.caption(f"Arquivo de dados: {ARQ}")
+
 
 
 
